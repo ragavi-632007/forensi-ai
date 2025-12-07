@@ -6,11 +6,16 @@ interface TimelineProps {
 }
 
 const Timeline: React.FC<TimelineProps> = ({ data }) => {
+  // Ensure data arrays exist and are arrays
+  const calls = Array.isArray(data.calls) ? data.calls : [];
+  const messages = Array.isArray(data.messages) ? data.messages : [];
+  const locations = Array.isArray(data.locations) ? data.locations : [];
+  
   // Merge and sort events
   const events = [
-    ...data.calls.map(c => ({ ...c, kind: 'call' as const })),
-    ...data.messages.map(m => ({ ...m, kind: 'message' as const })),
-    ...data.locations.map(l => ({ ...l, kind: 'location' as const }))
+    ...calls.map(c => ({ ...c, kind: 'call' as const })),
+    ...messages.map(m => ({ ...m, kind: 'message' as const })),
+    ...locations.map(l => ({ ...l, kind: 'location' as const }))
   ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
   return (
@@ -19,7 +24,20 @@ const Timeline: React.FC<TimelineProps> = ({ data }) => {
         <h3 className="text-cyan-400 font-semibold tracking-wide text-sm sm:text-base">UNIFIED TIMELINE</h3>
       </div>
       <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4">
-        {events.map((event, idx) => (
+        {events.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-500 py-12">
+            <svg className="w-16 h-16 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm font-semibold mb-2">No Timeline Events</p>
+            <p className="text-xs text-center max-w-xs">
+              {calls.length === 0 && messages.length === 0 && locations.length === 0
+                ? "No calls, messages, or locations found in this case."
+                : "No events to display in the timeline."}
+            </p>
+          </div>
+        ) : (
+          events.map((event, idx) => (
           <div key={idx} className="relative pl-6 border-l-2 border-slate-700 hover:border-cyan-400 transition-colors group">
             <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-slate-800 border-2 border-slate-600 group-hover:border-cyan-400 group-hover:bg-cyan-900 transition-colors"></div>
             <div className="bg-slate-800/50 p-2 sm:p-3 rounded border border-slate-700/50 hover:bg-slate-800 transition-all">
@@ -66,7 +84,8 @@ const Timeline: React.FC<TimelineProps> = ({ data }) => {
               )}
             </div>
           </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

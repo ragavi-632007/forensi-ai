@@ -44,6 +44,7 @@ export interface AuthState {
   username: string;
   currentUser: Officer | null;
   isDemoMode?: boolean;
+  secureToken?: string; // Persist secureToken for chat access
 }
 
 export interface SessionState {

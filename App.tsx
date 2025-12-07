@@ -54,7 +54,8 @@ function App() {
            isAuthenticated: true,
            username: username,
            currentUser: officer,
-           isDemoMode: false
+           isDemoMode: false,
+           secureToken: secureToken // Persist secureToken for chat access
          });
          
          // Save session state
@@ -78,7 +79,8 @@ function App() {
           isAuthenticated: true,
           username: username || 'demo',
           currentUser: { id: 'u1', name: 'Det. Miller', role: 'Investigator', avatar: '', online: true },
-          isDemoMode: true
+          isDemoMode: true,
+          secureToken: secureToken // Persist secureToken for chat access
         });
         
         // Save session state
@@ -109,6 +111,11 @@ function App() {
         // Restore authentication state
         setIsAuthenticated(true);
         setUsername(savedAuth.username || '');
+        
+        // Restore secureToken if available
+        if (savedAuth.secureToken) {
+          setSecureToken(savedAuth.secureToken);
+        }
         
         if (savedAuth.currentUser) {
           setCurrentUser(savedAuth.currentUser);
@@ -251,9 +258,15 @@ function App() {
         name: finalName,
         extractionDate: timestamp.toISOString(),
         media: mediaToUse,
+        // Ensure calls and messages are included from MOCK_CASE_DATA
+        calls: MOCK_CASE_DATA.calls || [],
+        messages: MOCK_CASE_DATA.messages || [],
+        locations: MOCK_CASE_DATA.locations || [],
         teamMessages: [],
         activityLog: []
       };
+      
+      console.log(`Creating new case with ${newCase.calls.length} calls, ${newCase.messages.length} messages, ${newCase.locations.length} locations`);
 
       if (isSupabaseConfigured()) {
         await persistCase(newCase, currentUser.id);
@@ -766,12 +779,12 @@ function App() {
               
               <div className="hidden sm:block w-px h-6 bg-slate-700"></div>
 
-              {/* Chat Toggle Button */}
-              {secureToken ? (
+              {/* Chat Toggle Button - Enabled for all authenticated officers */}
+              {isAuthenticated ? (
                   <button 
                     onClick={toggleChat}
                     className={`relative p-1.5 sm:p-2 rounded-full transition-colors ${isChatPanelOpen ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                    title="Secure Officer Chat"
+                    title="Secure Officer Chat - Text with team members about the case"
                     aria-label="Toggle team chat"
                   >
                      <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" /></svg>
@@ -783,7 +796,7 @@ function App() {
                   <button 
                     disabled 
                     className="p-1.5 sm:p-2 rounded-full text-slate-700 cursor-not-allowed" 
-                    title="Chat requires Secure Token"
+                    title="Chat requires authentication"
                     aria-label="Chat disabled"
                   >
                      <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>

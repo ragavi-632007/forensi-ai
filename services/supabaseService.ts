@@ -103,7 +103,7 @@ export const persistCase = async (caseData: CaseData, officerId: string) => {
 
     // 3. Insert Arrays (Evidence) with error handling
     // Use upsert to handle potential duplicates gracefully
-    if (caseData.calls.length > 0) {
+    if (caseData.calls && Array.isArray(caseData.calls) && caseData.calls.length > 0) {
       const callsToInsert = caseData.calls.map(c => ({ 
         id: c.id || `${caseData.id}_call_${Date.now()}_${Math.random()}`, // Generate unique ID if missing
         case_id: caseData.id,
@@ -114,16 +114,22 @@ export const persistCase = async (caseData: CaseData, officerId: string) => {
         type: c.type
       }));
       
+      console.log(`Saving ${callsToInsert.length} calls for case ${caseData.id}`);
+      
       const { error: callsError } = await supabase.from('evidence_calls')
         .upsert(callsToInsert, { onConflict: 'id' });
       
       if (callsError) {
         console.error('Error saving calls:', callsError);
         throw callsError;
+      } else {
+        console.log(`✓ Successfully saved ${callsToInsert.length} calls`);
       }
+    } else {
+      console.warn(`⚠️ No calls to save for case ${caseData.id}. Calls array is empty or missing.`);
     }
 
-    if (caseData.messages.length > 0) {
+    if (caseData.messages && Array.isArray(caseData.messages) && caseData.messages.length > 0) {
       const messagesToInsert = caseData.messages.map(m => ({ 
         id: m.id || `${caseData.id}_msg_${Date.now()}_${Math.random()}`, // Generate unique ID if missing
         case_id: caseData.id,
@@ -134,16 +140,22 @@ export const persistCase = async (caseData: CaseData, officerId: string) => {
         app: m.app
       }));
       
+      console.log(`Saving ${messagesToInsert.length} messages for case ${caseData.id}`);
+      
       const { error: messagesError } = await supabase.from('evidence_messages')
         .upsert(messagesToInsert, { onConflict: 'id' });
       
       if (messagesError) {
         console.error('Error saving messages:', messagesError);
         throw messagesError;
+      } else {
+        console.log(`✓ Successfully saved ${messagesToInsert.length} messages`);
       }
+    } else {
+      console.warn(`⚠️ No messages to save for case ${caseData.id}. Messages array is empty or missing.`);
     }
 
-    if (caseData.locations.length > 0) {
+    if (caseData.locations && Array.isArray(caseData.locations) && caseData.locations.length > 0) {
       const locationsToInsert = caseData.locations.map(l => ({ 
         id: l.id || `${caseData.id}_loc_${Date.now()}_${Math.random()}`, // Generate unique ID if missing
         case_id: caseData.id,
@@ -304,7 +316,18 @@ export const fetchFullCase = async (caseId: string): Promise<CaseData | null> =>
     const teamMessages = Array.isArray(teamMsgsResult.data) ? teamMsgsResult.data : [];
     const activityLog = Array.isArray(activityResult.data) ? activityResult.data : [];
 
-    console.log(`Loaded case ${caseId}: ${calls.length} calls, ${messages.length} messages, ${media.length} media items`);
+    console.log(`Loaded case ${caseId}: ${calls.length} calls, ${messages.length} messages, ${locations.length} locations, ${media.length} media items`);
+    
+    // Debug: Log sample data to verify structure
+    if (calls.length > 0) {
+      console.log('Sample call data:', calls[0]);
+    }
+    if (messages.length > 0) {
+      console.log('Sample message data:', messages[0]);
+    }
+    if (calls.length === 0 && messages.length === 0) {
+      console.warn(`⚠️ No calls or messages found for case ${caseId}. Check if data was saved during upload.`);
+    }
 
     return {
       id: c.id,
