@@ -1,4 +1,5 @@
 export enum ViewState {
+  HOME = 'HOME',
   LOGIN = 'LOGIN',
   UPLOAD = 'UPLOAD',
   DASHBOARD = 'DASHBOARD',

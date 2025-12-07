@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ViewState, CaseData, TeamMessage, CaseComment, Officer } from './types';
 import { MOCK_CASE_DATA, MOCK_GRAPH_DATA, MOCK_OFFICERS } from './data';
+import HomePage from './components/HomePage';
 import Dashboard from './components/Dashboard';
 import Timeline from './components/Timeline';
 import GraphViewer from './components/GraphViewer';
@@ -16,7 +17,7 @@ import { authenticateOfficer, fetchFullCase, persistCase, fetchAllCases, deleteC
 import { saveAuthState, getAuthState, clearAuthState, saveSessionState, getSessionState, clearSessionState } from './services/storageService';
 
 function App() {
-  const [view, setView] = useState<ViewState>(ViewState.LOGIN);
+  const [view, setView] = useState<ViewState>(ViewState.HOME);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState('');
   const [secureToken, setSecureToken] = useState('');
@@ -420,10 +421,12 @@ function App() {
     
     // Reset all state
     setIsAuthenticated(false);
-    setView(ViewState.LOGIN);
+    setView(ViewState.HOME);
     setCaseData(null);
     setSecureToken('');
     setUsername('');
+    setTeamMessages([]);
+    setCurrentUser({ id: 'u1', name: 'Det. Miller', role: 'Investigator', avatar: '', online: true });
   }
 
   // Handle sending a message
@@ -502,7 +505,17 @@ function App() {
 
   // --- Renderers ---
 
-  if (!isAuthenticated) {
+  // Show HomePage if not authenticated and view is HOME
+  if (view === ViewState.HOME && !isAuthenticated) {
+    return (
+      <HomePage 
+        onSignIn={() => setView(ViewState.LOGIN)}
+        onStartAnalysis={() => setView(ViewState.LOGIN)}
+      />
+    );
+  }
+
+  if (!isAuthenticated && view !== ViewState.HOME) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center relative overflow-hidden">
         {/* Background Mesh */}
@@ -551,10 +564,59 @@ function App() {
 
   if (view === ViewState.UPLOAD) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4 sm:p-8">
-        <h2 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 text-center">Case Management</h2>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 w-full max-w-6xl">
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col">
+        {/* Header with Navigation */}
+        <header className="w-full bg-slate-900 border-b border-slate-700 px-4 sm:px-6 lg:px-8 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            {/* Logo */}
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 flex items-center justify-center">
+                <svg className="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <span className="text-xl font-bold">
+                <span className="text-white">Forensi</span>
+                <span className="text-cyan-400">AI</span>
+              </span>
+            </div>
+
+            {/* Navigation Buttons */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setView(ViewState.HOME);
+                  setIsAuthenticated(false);
+                  clearAuthState();
+                  clearSessionState();
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-slate-700"
+                title="Go to Home Page"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                <span className="hidden sm:inline">Home</span>
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 rounded-lg transition-colors border border-red-600/30"
+                title="Logout"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
+          <h2 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 text-center">Case Management</h2>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 w-full max-w-6xl">
           
           {/* Ingest Section */}
           <div className="bg-slate-800 p-4 sm:p-8 rounded-xl border-2 border-dashed border-slate-600 text-center flex flex-col justify-center items-center hover:border-cyan-500/50 transition-colors group relative">
@@ -632,6 +694,7 @@ function App() {
               )}
             </div>
           </div>
+        </div>
         </div>
       </div>
     );
