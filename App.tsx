@@ -13,6 +13,7 @@ import { exportToJson, exportToCsv } from './services/exportService';
 import { parseZipFile } from './services/fileService';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { authenticateOfficer, fetchFullCase, persistCase, fetchAllCases, deleteCaseFromDb, logActivity, updateMediaComments, saveAIInsight } from './services/supabaseService';
+import { saveAuthState, getAuthState, clearAuthState, saveSessionState, getSessionState, clearSessionState } from './services/storageService';
 
 function App() {
   const [view, setView] = useState<ViewState>(ViewState.LOGIN);
@@ -32,6 +33,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState<Officer>({ id: 'u1', name: 'Det. Miller', role: 'Investigator', avatar: '', online: true });
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isRestoringState, setIsRestoringState] = useState(true); // Track if we're restoring state on mount
 
   // --- Auth Handlers ---
   const handleLogin = async () => {
@@ -46,6 +48,21 @@ function App() {
          setCurrentUser(officer);
          setIsAuthenticated(true);
          setView(ViewState.UPLOAD);
+         
+         // Save auth state to localStorage
+         saveAuthState({
+           isAuthenticated: true,
+           username: username,
+           currentUser: officer,
+           isDemoMode: false
+         });
+         
+         // Save session state
+         saveSessionState({
+           view: ViewState.UPLOAD,
+           caseId: null
+         });
+         
          loadSavedCasesList();
        } else {
          alert("Authentication Failed. Invalid Badge ID or Token.");
@@ -55,6 +72,20 @@ function App() {
       if (secureToken === 'demo') {
         setIsAuthenticated(true);
         setView(ViewState.UPLOAD);
+        
+        // Save auth state for demo mode
+        saveAuthState({
+          isAuthenticated: true,
+          username: username || 'demo',
+          currentUser: { id: 'u1', name: 'Det. Miller', role: 'Investigator', avatar: '', online: true },
+          isDemoMode: true
+        });
+        
+        // Save session state
+        saveSessionState({
+          view: ViewState.UPLOAD,
+          caseId: null
+        });
       } else {
         alert("Enter 'demo' as token for offline mode, or configure Supabase.");
       }
@@ -68,11 +99,96 @@ function App() {
     }
   };
 
+  // Restore authentication state on app load
+  useEffect(() => {
+    const restoreAuthState = async () => {
+      const savedAuth = getAuthState();
+      const savedSession = getSessionState();
+      
+      if (savedAuth && savedAuth.isAuthenticated) {
+        // Restore authentication state
+        setIsAuthenticated(true);
+        setUsername(savedAuth.username || '');
+        
+        if (savedAuth.currentUser) {
+          setCurrentUser(savedAuth.currentUser);
+        }
+        
+        // Restore view state
+        if (savedSession) {
+          setView(savedSession.view);
+          
+          // If we were viewing a case, restore it
+          if (savedSession.caseId && savedSession.view !== ViewState.UPLOAD && savedSession.view !== ViewState.LOGIN) {
+            try {
+              setIsProcessing(true);
+              const fullCase = await fetchFullCase(savedSession.caseId);
+              if (fullCase) {
+                // Validate and ensure all required arrays exist
+                const validatedCase: CaseData = {
+                  ...fullCase,
+                  calls: Array.isArray(fullCase.calls) ? fullCase.calls : [],
+                  messages: Array.isArray(fullCase.messages) ? fullCase.messages : [],
+                  locations: Array.isArray(fullCase.locations) ? fullCase.locations : [],
+                  media: Array.isArray(fullCase.media) ? fullCase.media : [],
+                  teamMessages: Array.isArray(fullCase.teamMessages) ? fullCase.teamMessages : [],
+                  activityLog: Array.isArray(fullCase.activityLog) ? fullCase.activityLog : []
+                };
+                
+                const fixedMedia = validatedCase.media.map(m => {
+                  if (m.url && m.url.startsWith('blob:')) {
+                    console.warn(`Invalid blob URL detected for ${m.fileName}. Blob URLs don't persist after page reload.`);
+                  }
+                  return m;
+                });
+                
+                setCaseData({ ...validatedCase, media: fixedMedia });
+                setTeamMessages(validatedCase.teamMessages || []);
+              } else {
+                // Case not found, go back to upload view
+                setView(ViewState.UPLOAD);
+                saveSessionState({ view: ViewState.UPLOAD, caseId: null });
+              }
+            } catch (error) {
+              console.error('Error restoring case:', error);
+              setView(ViewState.UPLOAD);
+              saveSessionState({ view: ViewState.UPLOAD, caseId: null });
+            } finally {
+              setIsProcessing(false);
+            }
+          } else {
+            // Load saved cases list if on upload view
+            if (savedSession.view === ViewState.UPLOAD) {
+              loadSavedCasesList();
+            }
+          }
+        } else {
+          // No saved session, default to upload view
+          setView(ViewState.UPLOAD);
+          loadSavedCasesList();
+        }
+      }
+      
+      // Mark restoration as complete
+      setIsRestoringState(false);
+    };
+    
+    restoreAuthState();
+  }, []); // Run only on mount
+
   useEffect(() => {
     if (view === ViewState.UPLOAD && isSupabaseConfigured()) {
       loadSavedCasesList();
     }
-  }, [view]);
+    
+    // Save session state whenever view changes (but not during initial restoration)
+    if (!isRestoringState && isAuthenticated && view !== ViewState.LOGIN) {
+      saveSessionState({
+        view: view,
+        caseId: caseData?.id || null
+      });
+    }
+  }, [view, caseData, isAuthenticated, isRestoringState]);
 
   // Real-time Team Chat Subscription
   useEffect(() => {
@@ -206,19 +322,25 @@ function App() {
             return m;
           });
           
-          setCaseData({ ...validatedCase, media: fixedMedia });
-          setTeamMessages(validatedCase.teamMessages || []);
-          setView(ViewState.DASHBOARD);
-          
-          await logActivity(validatedCase.id, {
-            id: Date.now().toString(),
-            userId: currentUser.id,
-            userName: currentUser.name,
-            action: "Opened Case",
-            target: validatedCase.name,
-            timestamp: new Date().toISOString(),
-            type: "access"
-          });
+                setCaseData({ ...validatedCase, media: fixedMedia });
+                setTeamMessages(validatedCase.teamMessages || []);
+                setView(ViewState.DASHBOARD);
+                
+                // Save session state
+                saveSessionState({
+                  view: ViewState.DASHBOARD,
+                  caseId: validatedCase.id
+                });
+                
+                await logActivity(validatedCase.id, {
+                  id: Date.now().toString(),
+                  userId: currentUser.id,
+                  userName: currentUser.name,
+                  action: "Opened Case",
+                  target: validatedCase.name,
+                  timestamp: new Date().toISOString(),
+                  type: "access"
+                });
         } else {
           console.error('Failed to load case: fetchFullCase returned null');
           alert("Failed to load case data. Please check the console for details.");
@@ -279,6 +401,11 @@ function App() {
   };
 
   const handleLogout = () => {
+    // Clear persisted auth and session state
+    clearAuthState();
+    clearSessionState();
+    
+    // Reset all state
     setIsAuthenticated(false);
     setView(ViewState.LOGIN);
     setCaseData(null);
@@ -596,8 +723,12 @@ function App() {
               </button>
               
               <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 min-w-0 flex-1">
-                <h2 className="text-sm sm:text-base md:text-xl font-bold text-white tracking-wide truncate">{caseData?.name}</h2>
-                <span className="hidden sm:inline-block px-1.5 sm:px-2 py-0.5 bg-slate-800 text-slate-400 text-[10px] sm:text-xs rounded border border-slate-700 font-mono whitespace-nowrap truncate max-w-[120px] md:max-w-none">{caseData?.id}</span>
+                <h2 className="text-sm sm:text-base md:text-xl font-bold text-white tracking-wide truncate">
+                  {caseData?.name || (isRestoringState ? 'Loading...' : 'No Case Selected')}
+                </h2>
+                {caseData?.id && (
+                  <span className="hidden sm:inline-block px-1.5 sm:px-2 py-0.5 bg-slate-800 text-slate-400 text-[10px] sm:text-xs rounded border border-slate-700 font-mono whitespace-nowrap truncate max-w-[120px] md:max-w-none">{caseData.id}</span>
+                )}
               </div>
            </div>
            
@@ -616,15 +747,21 @@ function App() {
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                 </button>
-                <div className="hidden absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-30 min-w-[120px]">
-                  <button onClick={() => exportToJson(caseData!)} className="w-full text-left px-3 py-2 text-xs text-white hover:bg-slate-700 rounded-t-lg">Export JSON</button>
-                  <button onClick={() => exportToCsv(caseData!)} className="w-full text-left px-3 py-2 text-xs text-white hover:bg-slate-700 rounded-b-lg">Export CSV</button>
-                </div>
+                {caseData && (
+                  <div className="hidden absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-30 min-w-[120px]">
+                    <button onClick={() => exportToJson(caseData)} className="w-full text-left px-3 py-2 text-xs text-white hover:bg-slate-700 rounded-t-lg">Export JSON</button>
+                    <button onClick={() => exportToCsv(caseData)} className="w-full text-left px-3 py-2 text-xs text-white hover:bg-slate-700 rounded-b-lg">Export CSV</button>
+                  </div>
+                )}
               </div>
               
               <div className="hidden sm:flex items-center gap-2">
-                 <button onClick={() => exportToJson(caseData!)} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-2 sm:px-3 py-1.5 rounded border border-slate-600 transition-colors whitespace-nowrap">Export JSON</button>
-                 <button onClick={() => exportToCsv(caseData!)} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-2 sm:px-3 py-1.5 rounded border border-slate-600 transition-colors whitespace-nowrap">Export CSV</button>
+                 {caseData && (
+                   <>
+                     <button onClick={() => exportToJson(caseData)} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-2 sm:px-3 py-1.5 rounded border border-slate-600 transition-colors whitespace-nowrap">Export JSON</button>
+                     <button onClick={() => exportToCsv(caseData)} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-2 sm:px-3 py-1.5 rounded border border-slate-600 transition-colors whitespace-nowrap">Export CSV</button>
+                   </>
+                 )}
               </div>
               
               <div className="hidden sm:block w-px h-6 bg-slate-700"></div>
@@ -665,20 +802,31 @@ function App() {
 
         {/* Content Scroll Area */}
         <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 relative">
-          {view === ViewState.DASHBOARD && <Dashboard data={caseData!} />}
-          {view === ViewState.TIMELINE && <Timeline data={caseData!} />}
-          {view === ViewState.GRAPH && <GraphViewer data={MOCK_GRAPH_DATA} />}
-          {view === ViewState.MAP && <MapViewer locations={caseData!.locations} />}
-          {view === ViewState.MEDIA && (
-             <MediaGallery 
-               media={caseData!.media} 
-               currentUser={currentUser}
-               onAddComment={handleAddComment}
-             />
-          )}
-          {view === ViewState.CHAT && <Chatbot data={caseData!} />}
-          
-          {view === ViewState.REPORT && (
+          {/* Show loading state while restoring or processing (but not for UPLOAD view) */}
+          {(isRestoringState || (isProcessing && !caseData)) && view !== ViewState.UPLOAD ? (
+            <div className="flex items-center justify-center h-full min-h-[400px]">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+                <p className="text-cyan-400 font-semibold">Loading case data...</p>
+                <p className="text-xs text-slate-500 mt-2">Please wait while we restore your session</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {view === ViewState.DASHBOARD && caseData && <Dashboard data={caseData} />}
+              {view === ViewState.TIMELINE && caseData && <Timeline data={caseData} />}
+              {view === ViewState.GRAPH && <GraphViewer data={MOCK_GRAPH_DATA} />}
+              {view === ViewState.MAP && caseData && <MapViewer locations={caseData.locations} />}
+              {view === ViewState.MEDIA && caseData && (
+                 <MediaGallery 
+                   media={caseData.media} 
+                   currentUser={currentUser}
+                   onAddComment={handleAddComment}
+                 />
+              )}
+              {view === ViewState.CHAT && caseData && <Chatbot data={caseData} />}
+              
+              {view === ViewState.REPORT && caseData && (
             <div className="bg-slate-850 rounded-lg border border-slate-700 shadow-xl p-4 sm:p-6 md:p-8 max-w-4xl mx-auto min-h-[400px] sm:min-h-[500px] md:min-h-[600px]">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6 border-b border-slate-700 pb-3 sm:pb-4">
                  <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-cyan-400">Forensic Case Summary</h2>
@@ -712,18 +860,22 @@ function App() {
               </div>
             </div>
           )}
+            </>
+          )}
 
           {/* Collaboration Panel Overlay */}
-          <div className={`fixed inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out w-full sm:w-80 ${isChatPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-             <CollaborationPanel 
-               caseData={caseData!} 
-               isOpen={isChatPanelOpen} 
-               onClose={() => setIsChatPanelOpen(false)}
-               currentUser={currentUser}
-               messages={teamMessages}
-               onSendMessage={handleSendMessage}
-             />
-          </div>
+          {caseData && (
+            <div className={`fixed inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out w-full sm:w-80 ${isChatPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+               <CollaborationPanel 
+                 caseData={caseData} 
+                 isOpen={isChatPanelOpen} 
+                 onClose={() => setIsChatPanelOpen(false)}
+                 currentUser={currentUser}
+                 messages={teamMessages}
+                 onSendMessage={handleSendMessage}
+               />
+            </div>
+          )}
         </main>
       </div>
     </div>
