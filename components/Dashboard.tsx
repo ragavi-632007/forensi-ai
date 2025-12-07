@@ -8,28 +8,38 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ data }) => {
+  // Ensure data arrays exist and are arrays
+  const calls = Array.isArray(data.calls) ? data.calls : [];
+  const messages = Array.isArray(data.messages) ? data.messages : [];
+  const media = Array.isArray(data.media) ? data.media : [];
+  const activityLog = Array.isArray(data.activityLog) ? data.activityLog : [];
+
   // Aggregate data for charts
-  const appUsage = data.messages.reduce((acc, curr) => {
-    acc[curr.app] = (acc[curr.app] || 0) + 1;
+  const appUsage = messages.reduce((acc, curr) => {
+    if (curr && curr.app) {
+      acc[curr.app] = (acc[curr.app] || 0) + 1;
+    }
     return acc;
   }, {} as Record<string, number>);
 
-  const pieData = Object.keys(appUsage).map(key => ({ name: key, value: appUsage[key] }));
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+  const pieData = Object.keys(appUsage).length > 0 
+    ? Object.keys(appUsage).map(key => ({ name: key, value: appUsage[key] }))
+    : [{ name: 'No Data', value: 1 }]; // Show placeholder if no data
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
   const callActivity = [
-    { name: 'Incoming', value: data.calls.filter(c => c.type === 'incoming').length },
-    { name: 'Outgoing', value: data.calls.filter(c => c.type === 'outgoing').length },
-    { name: 'Missed', value: data.calls.filter(c => c.type === 'missed').length },
+    { name: 'Incoming', value: calls.filter(c => c && c.type === 'incoming').length },
+    { name: 'Outgoing', value: calls.filter(c => c && c.type === 'outgoing').length },
+    { name: 'Missed', value: calls.filter(c => c && c.type === 'missed').length },
   ];
 
   // Media Counts
-  const mediaCounts = data.media.reduce((acc, curr) => {
-    acc[curr.type] = (acc[curr.type] || 0) + 1;
+  const mediaCounts = media.reduce((acc, curr) => {
+    if (curr && curr.type) {
+      acc[curr.type] = (acc[curr.type] || 0) + 1;
+    }
     return acc;
   }, { image: 0, video: 0, audio: 0 } as Record<string, number>);
-
-  const activityLog = data.activityLog || [];
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 animate-fade-in pb-10">
@@ -52,11 +62,11 @@ const Dashboard: React.FC<DashboardProps> = ({ data }) => {
       {/* Metrics */}
       <div className="bg-slate-850 p-4 sm:p-6 rounded-lg border border-slate-700 shadow-lg flex flex-col items-center justify-center">
         <h3 className="text-slate-400 text-xs sm:text-sm uppercase mb-2">Total Messages</h3>
-        <p className="text-3xl sm:text-4xl font-bold text-emerald-400">{data.messages.length}</p>
+        <p className="text-3xl sm:text-4xl font-bold text-emerald-400">{messages.length}</p>
       </div>
       <div className="bg-slate-850 p-4 sm:p-6 rounded-lg border border-slate-700 shadow-lg flex flex-col items-center justify-center">
         <h3 className="text-slate-400 text-xs sm:text-sm uppercase mb-2">Total Calls</h3>
-        <p className="text-3xl sm:text-4xl font-bold text-blue-400">{data.calls.length}</p>
+        <p className="text-3xl sm:text-4xl font-bold text-blue-400">{calls.length}</p>
       </div>
       <div className="bg-slate-850 p-4 sm:p-6 rounded-lg border border-slate-700 shadow-lg flex flex-col items-center justify-center">
         <h3 className="text-slate-400 text-xs sm:text-sm uppercase mb-2">Foreign Contacts</h3>
@@ -122,42 +132,54 @@ const Dashboard: React.FC<DashboardProps> = ({ data }) => {
       {/* Bar Chart */}
       <div className="bg-slate-850 p-4 sm:p-6 rounded-lg border border-slate-700 shadow-lg col-span-1 lg:col-span-2 h-[280px] sm:h-[320px]">
         <h3 className="text-slate-300 font-semibold mb-4 text-sm sm:text-base">Communication Volume</h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={callActivity}>
-            <XAxis dataKey="name" stroke="#94a3b8" />
-            <YAxis stroke="#94a3b8" />
-            <Tooltip 
-              contentStyle={{ backgroundColor: '#1e293b', borderColor: '#475569', color: '#fff' }}
-              itemStyle={{ color: '#fff' }}
-            />
-            <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {callActivity.some(c => c.value > 0) ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={callActivity}>
+              <XAxis dataKey="name" stroke="#94a3b8" />
+              <YAxis stroke="#94a3b8" />
+              <Tooltip 
+                contentStyle={{ backgroundColor: '#1e293b', borderColor: '#475569', color: '#fff' }}
+                itemStyle={{ color: '#fff' }}
+              />
+              <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[220px] text-slate-500 text-sm">
+            No call data available
+          </div>
+        )}
       </div>
 
       {/* Pie Chart (Restored) */}
       <div className="bg-slate-850 p-4 sm:p-6 rounded-lg border border-slate-700 shadow-lg col-span-1 lg:col-span-2 h-[280px] sm:h-[320px]">
         <h3 className="text-slate-300 font-semibold mb-4 text-sm sm:text-base">App Usage Analysis</h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <PieChart>
-            <Pie
-              data={pieData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {pieData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#475569', color: '#fff' }} />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
+        {pieData.length > 0 && pieData[0].name !== 'No Data' ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie
+                data={pieData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                {pieData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#475569', color: '#fff' }} />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[220px] text-slate-500 text-sm">
+            No message data available
+          </div>
+        )}
       </div>
       
        {/* Media Evidence Breakdown */}

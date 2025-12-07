@@ -171,36 +171,63 @@ function App() {
   const handleLoadCase = async (partialCase: any) => {
     if (isSupabaseConfigured()) {
       setIsProcessing(true);
-      const fullCase = await fetchFullCase(partialCase.id);
-      setIsProcessing(false);
-      
-      if (fullCase) {
-        // Check and fix any invalid blob URLs in media
-        const fixedMedia = fullCase.media.map(m => {
-          // If URL is a blob URL (starts with blob:), it's invalid after reload
-          // In this case, we'd need to re-extract or use a placeholder
-          // For now, we'll keep it as is and let the error handler show a placeholder
-          if (m.url && m.url.startsWith('blob:')) {
-            console.warn(`Invalid blob URL detected for ${m.fileName}. Blob URLs don't persist after page reload.`);
-          }
-          return m;
-        });
+      try {
+        const fullCase = await fetchFullCase(partialCase.id);
         
-        setCaseData({ ...fullCase, media: fixedMedia });
-        setTeamMessages(fullCase.teamMessages || []);
-        setView(ViewState.DASHBOARD);
-        
-        await logActivity(fullCase.id, {
-          id: Date.now().toString(),
-          userId: currentUser.id,
-          userName: currentUser.name,
-          action: "Opened Case",
-          target: fullCase.name,
-          timestamp: new Date().toISOString(),
-          type: "access"
-        });
-      } else {
-        alert("Failed to load case data.");
+        if (fullCase) {
+          // Validate and ensure all required arrays exist
+          const validatedCase: CaseData = {
+            ...fullCase,
+            calls: Array.isArray(fullCase.calls) ? fullCase.calls : [],
+            messages: Array.isArray(fullCase.messages) ? fullCase.messages : [],
+            locations: Array.isArray(fullCase.locations) ? fullCase.locations : [],
+            media: Array.isArray(fullCase.media) ? fullCase.media : [],
+            teamMessages: Array.isArray(fullCase.teamMessages) ? fullCase.teamMessages : [],
+            activityLog: Array.isArray(fullCase.activityLog) ? fullCase.activityLog : []
+          };
+
+          console.log(`Loaded case ${validatedCase.id}:`, {
+            calls: validatedCase.calls.length,
+            messages: validatedCase.messages.length,
+            locations: validatedCase.locations.length,
+            media: validatedCase.media.length,
+            teamMessages: validatedCase.teamMessages.length,
+            activityLog: validatedCase.activityLog.length
+          });
+
+          // Check and fix any invalid blob URLs in media
+          const fixedMedia = validatedCase.media.map(m => {
+            // If URL is a blob URL (starts with blob:), it's invalid after reload
+            // In this case, we'd need to re-extract or use a placeholder
+            // For now, we'll keep it as is and let the error handler show a placeholder
+            if (m.url && m.url.startsWith('blob:')) {
+              console.warn(`Invalid blob URL detected for ${m.fileName}. Blob URLs don't persist after page reload.`);
+            }
+            return m;
+          });
+          
+          setCaseData({ ...validatedCase, media: fixedMedia });
+          setTeamMessages(validatedCase.teamMessages || []);
+          setView(ViewState.DASHBOARD);
+          
+          await logActivity(validatedCase.id, {
+            id: Date.now().toString(),
+            userId: currentUser.id,
+            userName: currentUser.name,
+            action: "Opened Case",
+            target: validatedCase.name,
+            timestamp: new Date().toISOString(),
+            type: "access"
+          });
+        } else {
+          console.error('Failed to load case: fetchFullCase returned null');
+          alert("Failed to load case data. Please check the console for details.");
+        }
+      } catch (error) {
+        console.error('Error loading case:', error);
+        alert("Error loading case data. Please check the console for details.");
+      } finally {
+        setIsProcessing(false);
       }
     } else {
       // Mock Fallback

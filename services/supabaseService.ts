@@ -270,47 +270,79 @@ export const persistCase = async (caseData: CaseData, officerId: string) => {
 export const fetchFullCase = async (caseId: string): Promise<CaseData | null> => {
   if (!supabase) return null;
 
-  // Fetch Metadata
-  const { data: c, error } = await supabase.from('cases').select('*').eq('id', caseId).single();
-  if (error || !c) return null;
+  try {
+    // Fetch Metadata
+    const { data: c, error } = await supabase.from('cases').select('*').eq('id', caseId).single();
+    if (error || !c) {
+      console.error('Error fetching case metadata:', error);
+      return null;
+    }
 
-  // Parallel fetch for evidence
-  const [calls, msgs, locs, media, teamMsgs, activity] = await Promise.all([
-    supabase.from('evidence_calls').select('*').eq('case_id', caseId),
-    supabase.from('evidence_messages').select('*').eq('case_id', caseId),
-    supabase.from('evidence_locations').select('*').eq('case_id', caseId),
-    supabase.from('evidence_media').select('*').eq('case_id', caseId),
-    supabase.from('team_messages').select('*').eq('case_id', caseId).order('timestamp', { ascending: true }),
-    supabase.from('activity_logs').select('*').eq('case_id', caseId).order('timestamp', { ascending: false })
-  ]);
+    // Parallel fetch for evidence with proper error handling
+    const [callsResult, msgsResult, locsResult, mediaResult, teamMsgsResult, activityResult] = await Promise.all([
+      supabase.from('evidence_calls').select('*').eq('case_id', caseId),
+      supabase.from('evidence_messages').select('*').eq('case_id', caseId),
+      supabase.from('evidence_locations').select('*').eq('case_id', caseId),
+      supabase.from('evidence_media').select('*').eq('case_id', caseId),
+      supabase.from('team_messages').select('*').eq('case_id', caseId).order('timestamp', { ascending: true }),
+      supabase.from('activity_logs').select('*').eq('case_id', caseId).order('timestamp', { ascending: false })
+    ]);
 
-  return {
-    id: c.id,
-    name: c.name,
-    device: c.device,
-    owner: c.owner,
-    extractionDate: c.extraction_date,
-    calls: calls.data || [],
-    messages: msgs.data || [],
-    locations: locs.data || [],
-    media: media.data?.map(m => ({
-        ...m,
-        fileName: m.file_name,
-        mimeType: m.mime_type,
-        // Ensure comments is an array
-        comments: typeof m.comments === 'string' ? JSON.parse(m.comments) : (m.comments || [])
-    })) || [],
-    teamMessages: teamMsgs.data?.map(t => ({
-        ...t,
-        senderId: t.sender_id,
-        fileName: t.file_name
-    })) || [],
-    activityLog: activity.data?.map(a => ({
-        ...a,
-        userId: a.user_id,
-        userName: a.user_name
-    })) || []
-  };
+    // Log any errors but don't fail the entire load
+    if (callsResult.error) console.warn('Error fetching calls:', callsResult.error);
+    if (msgsResult.error) console.warn('Error fetching messages:', msgsResult.error);
+    if (locsResult.error) console.warn('Error fetching locations:', locsResult.error);
+    if (mediaResult.error) console.warn('Error fetching media:', mediaResult.error);
+    if (teamMsgsResult.error) console.warn('Error fetching team messages:', teamMsgsResult.error);
+    if (activityResult.error) console.warn('Error fetching activity logs:', activityResult.error);
+
+    // Ensure all arrays are properly initialized, even if queries fail
+    const calls = Array.isArray(callsResult.data) ? callsResult.data : [];
+    const messages = Array.isArray(msgsResult.data) ? msgsResult.data : [];
+    const locations = Array.isArray(locsResult.data) ? locsResult.data : [];
+    const media = Array.isArray(mediaResult.data) ? mediaResult.data : [];
+    const teamMessages = Array.isArray(teamMsgsResult.data) ? teamMsgsResult.data : [];
+    const activityLog = Array.isArray(activityResult.data) ? activityResult.data : [];
+
+    console.log(`Loaded case ${caseId}: ${calls.length} calls, ${messages.length} messages, ${media.length} media items`);
+
+    return {
+      id: c.id,
+      name: c.name,
+      device: c.device || '',
+      owner: c.owner || '',
+      extractionDate: c.extraction_date || new Date().toISOString(),
+      calls: calls,
+      messages: messages,
+      locations: locations,
+      media: media.map(m => ({
+          ...m,
+          fileName: m.file_name || m.fileName || '',
+          mimeType: m.mime_type || m.mimeType || '',
+          // Ensure comments is an array
+          comments: typeof m.comments === 'string' ? (() => {
+            try {
+              return JSON.parse(m.comments);
+            } catch {
+              return [];
+            }
+          })() : (Array.isArray(m.comments) ? m.comments : [])
+      })),
+      teamMessages: teamMessages.map(t => ({
+          ...t,
+          senderId: t.sender_id || t.senderId || '',
+          fileName: t.file_name || t.fileName
+      })),
+      activityLog: activityLog.map(a => ({
+          ...a,
+          userId: a.user_id || a.userId || '',
+          userName: a.user_name || a.userName || ''
+      }))
+    };
+  } catch (error) {
+    console.error('Failed to fetch full case:', error);
+    return null;
+  }
 };
 
 export const fetchAllCases = async () => {
