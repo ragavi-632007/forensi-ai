@@ -1,0 +1,5 @@
+{
+  "name": "ForensiAI",
+  "description": "An AI-powered digital forensic analysis platform for parsing, visualizing, and querying UFDR data with semantic search and anomaly detection.",
+  "requestFramePermissions": []
+}
